@@ -1,0 +1,47 @@
+#!/usr/bin/python3
+
+"""
+Copyright 2021 Edmundo Carmona Antoranz
+Released under the terms of GPLv3
+
+Monitor FS activity and when a change is noticed, fire an action
+"""
+
+import argparse
+
+parser = argparse.ArgumentParser(description='FS listener')
+parser.add_argument('files', metavar='F', type=str, nargs='+', help='Files to monitor for changes')
+
+args = parser.parse_args()
+
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+import time
+import sys
+
+def request_refresh():
+    """
+    Ask to fire the command that was setup by the user
+    
+    There will be a little delay to fire, that is so that we can wait for events to settle
+    If there is an update when the command has already started, it will stop the executing command and fire once more
+    """
+    sys.stderr.write("Requested a refresh\n")
+
+class MyHandler(FileSystemEventHandler):
+    def on_modified(self, event):
+        request_refresh()
+
+event_handler2 = MyHandler()
+observer = Observer()
+for aFile in args.files:
+    observer.schedule(event_handler2, aFile, recursive=True)
+observer.start()
+
+try:
+    while True:
+        time.sleep(1)
+except Exception:
+    None
+observer.stop()
+observer.join()
