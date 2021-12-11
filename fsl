@@ -10,14 +10,19 @@ Monitor FS activity and when a change is noticed, fire an action
 import argparse
 
 parser = argparse.ArgumentParser(description='FS listener')
-parser.add_argument('files', metavar='F', type=str, nargs='+', help='Files to monitor for changes')
+parser.add_argument('command', type=str, help="Command to execute (use quotes multiple arguments are needed)")
+parser.add_argument('files', metavar='filename', type=str, nargs='+', help='Files to monitor for changes')
 
 args = parser.parse_args()
 
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-import time
+import subprocess
 import sys
+import time
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+
+REQUEST_TIME=None
+UPDATE_PROCESS=None
 
 def request_refresh():
     """
@@ -26,7 +31,30 @@ def request_refresh():
     There will be a little delay to fire, that is so that we can wait for events to settle
     If there is an update when the command has already started, it will stop the executing command and fire once more
     """
-    sys.stderr.write("Requested a refresh\n")
+    global REQUEST_TIME, UPDATE_PROCESS
+    sys.stderr.write("Requested a refresh sync\n")
+    REQUEST_TIME=time.time()
+    if UPDATE_PROCESS is not None:
+        print("Refresh has started... need to halt the process")
+        try:
+            UPDATE_PROCESS.kill()
+        except:
+           None # doesn't matter, probably UPDATE_PROCESS had been cleared (FIXME use locking)
+
+def check_refresh():
+    """
+    Check if a new execution has to be started
+    """
+    global REQUEST_TIME, UPDATE_PROCESS, args
+    if REQUEST_TIME is not None:
+        # there was a request to refresh
+        if time.time() - REQUEST_TIME >= 1:
+            REQUEST_TIME=None # we clear it here so that it's not cleared when it's finished
+            print("Running refresh command: %s" % args.command)
+            UPDATE_PROCESS=subprocess.Popen(args.command.split())
+            UPDATE_PROCESS.wait()
+            print("refresh finished")
+            UPDATE_PROCESS=None
 
 class MyHandler(FileSystemEventHandler):
     def on_modified(self, event):
@@ -40,7 +68,8 @@ observer.start()
 
 try:
     while True:
-        time.sleep(1)
+        time.sleep(0.001) # wait for a ms
+        check_refresh()
 except Exception:
     None
 observer.stop()
